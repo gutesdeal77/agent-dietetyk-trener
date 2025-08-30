@@ -6,6 +6,7 @@ const FOLDER_ID          = '1SYaxKQP_dOz4e4nwF5mg9aS7kmP_7uzq'; // folder z CSV
 const SCAN_SHEET         = 'Skany';      // [timestamp, ean, status]
 const DB_SHEET           = 'DB';         // [ean, name, kcal_100g, unit, Domyślne_dni, Status]
 const PANTRY_SHEET       = 'Spiżarka';   // [timestamp, ean, name, qty, unit, kcal_100g, expiry, status]
+const RECEIPTS_SHEET     = 'Paragony';   // [źródło | plik | paragon_uid | data | sklep_nip | numer_dokumentu | płatność | lp | typ | nazwa_raw | ean | ilość | cena_jedn_brutto_zł | wartość_brutto_zł | vat_id | vat_stawka | status | uwagi]
 const PROCESSED_SUFFIX   = '.done';      // dopinamy do nazwy po imporcie
 const TRASH_AFTER_IMPORT = false;        // true = do kosza zamiast .done
 
@@ -20,6 +21,9 @@ function onOpen(){
       .addSeparator()
       .addItem('Diag: lista plików', 'diagListCsvInFolder')
       .addItem('Diag: przetwórz 1 plik', 'diagProcessOneFile')
+      .addItem('Utwórz nagłówki „Paragony”', 'ensureParagonyHeaders_')
+      .addItem('Importuj e-Paragony (JSON) z Drive', 'importReceiptsFromDrive_')
+      .addItem('Diag: lista JSON w folderze', 'diagListJsonInFolder_')
       .addToUi();
   } catch(e){ Logger.log('onOpen error: ' + e); }
 }
@@ -54,8 +58,11 @@ function ensureSheets(){
     ensureHeaders_(sk, ['timestamp','ean','status']);
     ensureHeaders_(db, ['ean','name','kcal_100g','unit','Domyślne_dni','Status']);
     ensureHeaders_(sp, ['timestamp','ean','name','qty','unit','kcal_100g','expiry','status']);
+    ensureParagonyHeaders_(); 
     Logger.log('ensureSheets: OK');
   } catch(e){ Logger.log('ensureSheets error: ' + e); }
+    
+
 }
 
 /********** DRIVE API – LISTA PLIKÓW W FOLDERZE **********/
@@ -295,3 +302,91 @@ function diagProcessOneFile(){
     Logger.log('diagProcessOneFile error: ' + e + ' | stack: ' + (e.stack||''));
   }
 }
+function ensureParagonyHeaders_(){
+  const sh = ss().getSheetByName(RECEIPTS_SHEET) || ss().insertSheet(RECEIPTS_SHEET);
+  const cols = ['źródło','plik','paragon_uid','data','sklep_nip','numer_dokumentu','płatność','lp','typ','nazwa_raw','ean','ilość','cena_jedn_brutto_zł','wartość_brutto_zł','vat_id','vat_stawka','status','uwagi'];
+  sh.getRange(1,1,1,cols.length).setValues([cols]);
+  sh.setFrozenRows(1);
+  try { const f = sh.getFilter(); if (f) f.remove(); } catch(e) {}
+  sh.getRange(1,1,sh.getMaxRows(),cols.length).createFilter();
+  sh.getRange('K:K').setNumberFormat('@');                // ean tekst
+  sh.getRange('D:D').setNumberFormat('yyyy-mm-dd HH:mm'); // data-czas
+  sh.getRange('M:N').setNumberFormat('0.00');             // kwoty
+}
+
+function importReceiptsFromDrive_(){
+  ensureParagonyHeaders_();
+  const sh = ss().getSheetByName(RECEIPTS_SHEET);
+  const q = `'${FOLDER_ID}' in parents and mimeType='application/json' and trashed=false`;
+  const files = (Drive.Files.list({q:q, pageSize:1000}).files||[])
+                 .filter(f => !(f.name||'').endsWith(PROCESSED_SUFFIX));
+  let all = [];
+  files.forEach(f=>{
+    try{
+      const txt = DriveApp.getFileById(f.id).getBlob().getDataAsString('UTF-8');
+      const obj = JSON.parse(txt);
+      all = all.concat(parseReceiptJson_(obj, f.name));
+    }catch(e){ Logger.log('JSON error: '+(f.name||f.id)+' '+e); }
+  });
+  if (all.length){
+    sh.getRange(sh.getLastRow()+1,1,all.length,all[0].length).setValues(all);
+  }
+  files.forEach(f=>{
+    try{
+      const file = DriveApp.getFileById(f.id);
+      if (TRASH_AFTER_IMPORT) file.setTrashed(true);
+      else file.setName(f.name + PROCESSED_SUFFIX);
+    }catch(e){}
+  });
+}
+
+function parseReceiptJson_(obj, filename){
+  const hdr = obj.header||[];
+  let tin='', docNum='', dateISO='';
+  for (let i=0;i<hdr.length;i++){
+    if (hdr[i].headerData){
+      const h = hdr[i].headerData;
+      tin = h.tin || tin;
+      docNum = h.docNumber || docNum;
+      dateISO = h.date || dateISO;
+    }
+  }
+  let pay='';
+  (obj.body||[]).some(it=>{ if(it.payment){ pay = it.payment.name||''; return true; } return false; });
+
+  let uid='';
+  const re = /Numer[^>]*>(\d{10,})</;
+  (obj.body||[]).forEach(it=>{
+    if(it.addLine && typeof it.addLine.data==='string'){
+      const m = it.addLine.data.match(re);
+      if(m) uid = uid || m[1];
+    }
+  });
+
+  const out=[], body = obj.body||[];
+  let lp=0;
+  body.forEach(it=>{
+    if (it.sellLine){
+      const s = it.sellLine;
+      lp++;
+      out.push(['e-paragon', filename, uid, new Date(dateISO), tin, docNum, pay,
+                lp, 'sell', s.name||'', '', Number(s.quantity||0),
+                (s.price||0)/100, (s.total||0)/100, s.vatId||'', '', '', '' ]);
+    } else if (it.discountLine){
+      const d = it.discountLine;
+      out.push(['e-paragon', filename, uid, new Date(dateISO), tin, docNum, pay,
+                '', 'discount', '', '', '', '', -(d.value||0)/100, d.vatId||'', '', '', '' ]);
+    }
+  });
+  return out;
+}
+
+function diagListJsonInFolder_(){
+  const q = `'${FOLDER_ID}' in parents and mimeType='application/json' and trashed=false`;
+  const files = (Drive.Files.list({q:q, pageSize:200}).files||[]);
+  const sh = ss().getSheetByName('DiagJSON') || ss().insertSheet('DiagJSON');
+  sh.clear();
+  if (files.length) sh.getRange(1,1,files.length,2).setValues(files.map(f=>[f.name,f.id]));
+}
+
+
