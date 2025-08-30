@@ -46,6 +46,15 @@ function detectSep_(txt){
   const first = (txt.split(/\r?\n/)[0]||'');
   const cnt = s => (first.match(new RegExp('\\'+s,'g'))||[]).length;
   return cnt(';')>cnt(',') ? ';' : ',';
+
+function receiptsIndex_(){
+  const sh = ss().getSheetByName(RECEIPTS_SHEET);
+  const last = sh.getLastRow();
+  const byFile = new Set(last>1 ? sh.getRange(2,2,last-1,1).getValues().flat().filter(Boolean) : []);
+  const byUid  = new Set(last>1 ? sh.getRange(2,3,last-1,1).getValues().flat().filter(Boolean) : []);
+  return { byFile, byUid };
+}
+
 }
 
 /********** ZAKŁADKI / NAGŁÓWKI **********/
@@ -319,26 +328,43 @@ function importReceiptsFromDrive_(){
   ensureParagonyHeaders_();
   const sh = ss().getSheetByName(RECEIPTS_SHEET);
   const q = `'${JSON_FOLDER_ID}' in parents and trashed=false and (mimeType='application/json' or name contains '.json')`;
-  const files = (Drive.Files.list({q:q, pageSize:1000}).files||[])
+  const files = (Drive.Files.list({ q, pageSize: 1000 }).files || [])
                  .filter(f => !(f.name||'').endsWith(PROCESSED_SUFFIX));
-  let all = [];
+
+  const idx = receiptsIndex_();        // ← mamy listę już zaimportowanych plików/paragonów
+  let batch = [];                      // zbierzemy wiersze i wstawimy hurtem
+
   files.forEach(f=>{
+    if (idx.byFile.has(f.name)) return;  // plik już był → nie dubluj
+
     try{
       const txt = DriveApp.getFileById(f.id).getBlob().getDataAsString('UTF-8');
       const obj = JSON.parse(txt);
-      all = all.concat(parseReceiptJson_(obj, f.name));
+      const rows = parseReceiptJson_(obj, f.name);
+      if (rows && rows.length){
+        batch = batch.concat(rows);
+        idx.byFile.add(f.name);         // żeby w tej samej sesji też nie dublować
+      }
     }catch(e){ Logger.log('JSON error: '+(f.name||f.id)+' '+e); }
   });
-  if (all.length){
-    sh.getRange(sh.getLastRow()+1,1,all.length,all[0].length).setValues(all);
+
+  if (batch.length){
+    sh.getRange(sh.getLastRow()+1,1,batch.length,batch[0].length).setValues(batch);
   }
+  SpreadsheetApp.getActive().toast(`Import: ${batch.length} wierszy z ${files.length} plików`);
+
+  // twardsze .done: użyj zaawansowanego Drive v3
   files.forEach(f=>{
     try{
-      const file = DriveApp.getFileById(f.id);
-      if (TRASH_AFTER_IMPORT) file.setTrashed(true);
-      else file.setName(f.name + PROCESSED_SUFFIX);
-    }catch(e){}
+      if (TRASH_AFTER_IMPORT) {
+        Drive.Files.update({ trashed: true }, f.id);
+      } else {
+        Drive.Files.update({ name: f.name + PROCESSED_SUFFIX }, f.id);
+      }
+    }catch(e){ Logger.log('rename/trash error: '+(f.name||f.id)+' '+e); }
   });
+}
+
 }
 
 function parseReceiptJson_(obj, filename){
@@ -395,6 +421,7 @@ function diagListJsonInFolder_(){
   }
   SpreadsheetApp.getActive().toast(`DiagJSON: ${files.length} plików`);
 }
+
 
 
 
