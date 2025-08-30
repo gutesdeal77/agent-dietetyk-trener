@@ -2,7 +2,8 @@
 function ss(){ return SpreadsheetApp.getActive(); }
 
 // 🔧 USTAWIENIA – podmień tylko to ID gdyby się zmienił folder
-const FOLDER_ID          = '1SYaxKQP_dOz4e4nwF5mg9aS7kmP_7uzq'; // folder z CSV
+const FOLDER_ID          = '1SYaxKQP_dOz4e4nwF5mg9aS7kmP_7uzq'; // folder z CSV Skaner z Lodówki
+const JSON_FOLDER_ID     = '1fQdNZCb3ar18J-k_KJVBWpGaXa0I3-22'; // folder z JSON  E-PARAGONAMI z Biedronki
 const SCAN_SHEET         = 'Skany';      // [timestamp, ean, status]
 const DB_SHEET           = 'DB';         // [ean, name, kcal_100g, unit, Domyślne_dni, Status]
 const PANTRY_SHEET       = 'Spiżarka';   // [timestamp, ean, name, qty, unit, kcal_100g, expiry, status]
@@ -69,7 +70,7 @@ function ensureSheets(){
 // WYMAGA: Usługi → włącz „Drive API”
 function listCsvFilesViaApi_(){
   // v3: q = " 'folderId' in parents and trashed=false "
-  const q = `'${FOLDER_ID}' in parents and trashed=false`;
+  const q = `'${CSV_FOLDER_ID}' in parents and trashed=false`;
   const out = [];
   let pageToken;
   do{
@@ -268,7 +269,7 @@ function guessDaysByName_(name=''){
 function diagListCsvInFolder(){
   try{
     const files = listCsvFilesViaApi_();
-    Logger.log(`FOLDER_ID=${FOLDER_ID} | plików CSV bez .done: ${files.length}`);
+    Logger.log(`FOLDER_ID=${CSV_FOLDER_ID} | plików CSV bez .done: ${files.length}`);
     files.forEach(f=>Logger.log(`${f.name} | id=${f.id}`));
   } catch(e){
     Logger.log('diagListCsvInFolder error: ' + e + ' | stack: ' + (e.stack||''));
@@ -317,7 +318,7 @@ function ensureParagonyHeaders_(){
 function importReceiptsFromDrive_(){
   ensureParagonyHeaders_();
   const sh = ss().getSheetByName(RECEIPTS_SHEET);
-  const q = `'${FOLDER_ID}' in parents and mimeType='application/json' and trashed=false`;
+  const q = `'${JSON_FOLDER_ID}' in parents and mimeType='application/json' and trashed=false`;
   const files = (Drive.Files.list({q:q, pageSize:1000}).files||[])
                  .filter(f => !(f.name||'').endsWith(PROCESSED_SUFFIX));
   let all = [];
@@ -388,5 +389,6 @@ function diagListJsonInFolder_(){
   sh.clear();
   if (files.length) sh.getRange(1,1,files.length,2).setValues(files.map(f=>[f.name,f.id]));
 }
+
 
 
