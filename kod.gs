@@ -318,7 +318,7 @@ function ensureParagonyHeaders_(){
 function importReceiptsFromDrive_(){
   ensureParagonyHeaders_();
   const sh = ss().getSheetByName(RECEIPTS_SHEET);
-  const q = `'${JSON_FOLDER_ID}' in parents and mimeType='application/json' and trashed=false`;
+  const q = `'${JSON_FOLDER_ID}' in parents and trashed=false and (mimeType='application/json' or name contains '.json')`;
   const files = (Drive.Files.list({q:q, pageSize:1000}).files||[])
                  .filter(f => !(f.name||'').endsWith(PROCESSED_SUFFIX));
   let all = [];
@@ -389,6 +389,7 @@ function diagListJsonInFolder_(){
   sh.clear();
   if (files.length) sh.getRange(1,1,files.length,2).setValues(files.map(f=>[f.name,f.id]));
 }
+
 
 
 
