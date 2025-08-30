@@ -383,13 +383,18 @@ function parseReceiptJson_(obj, filename){
 }
 
 function diagListJsonInFolder_(){
-  const q = `'${FOLDER_ID}' in parents and mimeType='application/json' and trashed=false`;
-  const files = (Drive.Files.list({q:q, pageSize:200}).files||[]);
+  const q = `'${JSON_FOLDER_ID}' in parents and trashed=false and (mimeType='application/json' or name contains '.json')`;
+  const res = Drive.Files.list({ q, pageSize: 200 });
+  const files = res.files || [];
+
   const sh = ss().getSheetByName('DiagJSON') || ss().insertSheet('DiagJSON');
   sh.clear();
-  if (files.length) sh.getRange(1,1,files.length,2).setValues(files.map(f=>[f.name,f.id]));
+  sh.getRange(1,1,1,2).setValues([['name','id']]);
+  if (files.length) {
+    sh.getRange(2,1,files.length,2).setValues(files.map(f => [f.name, f.id]));
+  }
+  SpreadsheetApp.getActive().toast(`DiagJSON: ${files.length} plików`);
 }
-
 
 
 
