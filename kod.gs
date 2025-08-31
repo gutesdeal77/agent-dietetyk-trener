@@ -444,10 +444,12 @@ function recalcPantryTotals_(){
   const last = sh.getLastRow(); if(last<2) return;
   const e = H['ean'], q = H['qty'], k100 = H['kcal_100g'], Q = H['ilość_łącznie'], K = H['kcal_łącznie'];
 
-  sh.getRange(2,Q).setFormulaR1C1(`=IF(R2C${e}="","",SUMIF(C${e},R2C${e},C${q}))`);
-  sh.getRange(2,K).setFormulaR1C1(`=IF(R2C${e}="","",R2C${Q}*INDEX(C${k100},MATCH(R2C${e},C${e},0)))`);
-  sh.getRange(2,Q,last-1).fillDown();
-  sh.getRange(2,K,last-1).fillDown();
+  sh.getRange(2, Q, last-1, 1)
+  .setFormulaR1C1(`=IF(RC${e}="","",SUMIF(C${e},RC${e},C${q}))`);
+
+sh.getRange(2, K, last-1, 1)
+  .setFormulaR1C1(`=IF(RC${e}="","",RC${Q}*INDEX(C${k100},MATCH(RC${e},C${e},0)))`);
+
   SpreadsheetApp.getActive().toast('Przeliczono sumy w „Spiżarce”');
 }
 
