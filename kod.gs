@@ -29,6 +29,8 @@ function onOpen(){
       .addItem('Importuj e-Paragony (JSON) z Drive', 'importReceiptsFromDrive_')
       .addItem('Diag: lista JSON w folderze', 'diagListJsonInFolder_')
       .addItem('Diag: lista OCR (PDF/JPG)', 'diagListOcrInFolder_')
+      .addItem('Przelicz „Spiżarkę” (sumy)', 'recalcPantryTotals_')
+
 
       .addToUi();
   } catch(e){ Logger.log('onOpen error: ' + e); }
@@ -433,4 +435,20 @@ function diagListOcrInFolder_(){
   if(files.length) sh.getRange(2,1,files.length,3).setValues(files.map(f=>[f.name,f.id,f.mimeType]));
   SpreadsheetApp.getActive().toast(`DiagOCR: ${files.length} plików`);
 }
+function recalcPantryTotals_(){
+  const sh = ss().getSheetByName('Spiżarka');
+  const H  = headersMap_(sh);
+  if(!H['ilość_łącznie'] || !H['kcal_łącznie']){
+    SpreadsheetApp.getActive().toast('Brak kolumn: ilość_łącznie / kcal_łącznie'); return;
+  }
+  const last = sh.getLastRow(); if(last<2) return;
+  const e = H['ean'], q = H['qty'], k100 = H['kcal_100g'], Q = H['ilość_łącznie'], K = H['kcal_łącznie'];
+
+  sh.getRange(2,Q).setFormulaR1C1(`=IF(R2C${e}="","",SUMIF(C${e},R2C${e},C${q}))`);
+  sh.getRange(2,K).setFormulaR1C1(`=IF(R2C${e}="","",R2C${Q}*INDEX(C${k100},MATCH(R2C${e},C${e},0)))`);
+  sh.getRange(2,Q,last-1).fillDown();
+  sh.getRange(2,K,last-1).fillDown();
+  SpreadsheetApp.getActive().toast('Przeliczono sumy w „Spiżarce”');
+}
+
 
