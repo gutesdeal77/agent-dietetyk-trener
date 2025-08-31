@@ -5,6 +5,8 @@ function ss(){ return SpreadsheetApp.getActive(); }
 const FOLDER_ID          = '1SYaxKQP_dOz4e4nwF5mg9aS7kmP_7uzq'; // folder z CSV Skaner z Lodówki
 const CSV_FOLDER_ID      = FOLDER_ID;                            // alias dla funkcji CSV
 const JSON_FOLDER_ID     = '1fQdNZCb3ar18J-k_KJVBWpGaXa0I3-22'; // folder z JSON E-PARAGONAMI (Biedronka)
+const OCR_FOLDER_ID      = '1F7L3AC2VSSgfn39RUcZ2-XXwlV33qiZC';
+
 const SCAN_SHEET         = 'Skany';      // [timestamp, ean, status]
 const DB_SHEET           = 'DB';         // [ean, name, kcal_100g, unit, Domyślne_dni, Status]
 const PANTRY_SHEET       = 'Spiżarka';   // [timestamp, ean, name, qty, unit, kcal_100g, expiry, status]
@@ -26,6 +28,8 @@ function onOpen(){
       .addItem('Utwórz nagłówki „Paragony”', 'ensureParagonyHeaders_')
       .addItem('Importuj e-Paragony (JSON) z Drive', 'importReceiptsFromDrive_')
       .addItem('Diag: lista JSON w folderze', 'diagListJsonInFolder_')
+      .addItem('Diag: lista OCR (PDF/JPG)', 'diagListOcrInFolder_')
+
       .addToUi();
   } catch(e){ Logger.log('onOpen error: ' + e); }
 }
@@ -419,3 +423,14 @@ function diagListJsonInFolder_(){
   }
   SpreadsheetApp.getActive().toast(`DiagJSON: ${files.length} plików`);
 }
+function diagListOcrInFolder_(){
+  const q = `'${OCR_FOLDER_ID}' in parents and trashed=false and (mimeType='application/pdf' or mimeType contains 'image/')`;
+  const res = Drive.Files.list({ q, pageSize: 200 });
+  const files = res.files || [];
+  const sh = ss().getSheetByName('DiagOCR') || ss().insertSheet('DiagOCR');
+  sh.clear();
+  sh.getRange(1,1,1,3).setValues([['name','id','mimeType']]);
+  if(files.length) sh.getRange(2,1,files.length,3).setValues(files.map(f=>[f.name,f.id,f.mimeType]));
+  SpreadsheetApp.getActive().toast(`DiagOCR: ${files.length} plików`);
+}
+
