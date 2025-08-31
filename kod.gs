@@ -1,9 +1,10 @@
 /********** PODSTAWY **********/
 function ss(){ return SpreadsheetApp.getActive(); }
 
-// 🔧 USTAWIENIA – podmień tylko to ID gdyby się zmienił folder
+// 🔧 USTAWIENIA – podmień tylko te ID gdyby się zmieniły foldery
 const FOLDER_ID          = '1SYaxKQP_dOz4e4nwF5mg9aS7kmP_7uzq'; // folder z CSV Skaner z Lodówki
-const JSON_FOLDER_ID     = '1fQdNZCb3ar18J-k_KJVBWpGaXa0I3-22'; // folder z JSON  E-PARAGONAMI z Biedronki
+const CSV_FOLDER_ID      = FOLDER_ID;                            // alias dla funkcji CSV
+const JSON_FOLDER_ID     = '1fQdNZCb3ar18J-k_KJVBWpGaXa0I3-22'; // folder z JSON E-PARAGONAMI (Biedronka)
 const SCAN_SHEET         = 'Skany';      // [timestamp, ean, status]
 const DB_SHEET           = 'DB';         // [ean, name, kcal_100g, unit, Domyślne_dni, Status]
 const PANTRY_SHEET       = 'Spiżarka';   // [timestamp, ean, name, qty, unit, kcal_100g, expiry, status]
@@ -46,15 +47,14 @@ function detectSep_(txt){
   const first = (txt.split(/\r?\n/)[0]||'');
   const cnt = s => (first.match(new RegExp('\\'+s,'g'))||[]).length;
   return cnt(';')>cnt(',') ? ';' : ',';
+}
 
 function receiptsIndex_(){
-  const sh = ss().getSheetByName(RECEIPTS_SHEET);
+  const sh   = ss().getSheetByName(RECEIPTS_SHEET);
   const last = sh.getLastRow();
   const byFile = new Set(last>1 ? sh.getRange(2,2,last-1,1).getValues().flat().filter(Boolean) : []);
   const byUid  = new Set(last>1 ? sh.getRange(2,3,last-1,1).getValues().flat().filter(Boolean) : []);
   return { byFile, byUid };
-}
-
 }
 
 /********** ZAKŁADKI / NAGŁÓWKI **********/
@@ -71,12 +71,10 @@ function ensureSheets(){
     ensureParagonyHeaders_(); 
     Logger.log('ensureSheets: OK');
   } catch(e){ Logger.log('ensureSheets error: ' + e); }
-    
-
 }
 
 /********** DRIVE API – LISTA PLIKÓW W FOLDERZE **********/
-// WYMAGA: Usługi → włącz „Drive API”
+// WYMAGA: Usługi → włącz „Drive API” (zaawansowane)
 function listCsvFilesViaApi_(){
   // v3: q = " 'folderId' in parents and trashed=false "
   const q = `'${CSV_FOLDER_ID}' in parents and trashed=false`;
@@ -274,11 +272,11 @@ function guessDaysByName_(name=''){
   return 0;
 }
 
-/********** DIAGNOSTYKA **********/
+/********** DIAGNOSTYKA CSV **********/
 function diagListCsvInFolder(){
   try{
     const files = listCsvFilesViaApi_();
-    Logger.log(`FOLDER_ID=${CSV_FOLDER_ID} | plików CSV bez .done: ${files.length}`);
+    Logger.log(`CSV_FOLDER_ID=${CSV_FOLDER_ID} | plików CSV bez .done: ${files.length}`);
     files.forEach(f=>Logger.log(`${f.name} | id=${f.id}`));
   } catch(e){
     Logger.log('diagListCsvInFolder error: ' + e + ' | stack: ' + (e.stack||''));
@@ -312,6 +310,8 @@ function diagProcessOneFile(){
     Logger.log('diagProcessOneFile error: ' + e + ' | stack: ' + (e.stack||''));
   }
 }
+
+/********** PARAGONY: nagłówki **********/
 function ensureParagonyHeaders_(){
   const sh = ss().getSheetByName(RECEIPTS_SHEET) || ss().insertSheet(RECEIPTS_SHEET);
   const cols = ['źródło','plik','paragon_uid','data','sklep_nip','numer_dokumentu','płatność','lp','typ','nazwa_raw','ean','ilość','cena_jedn_brutto_zł','wartość_brutto_zł','vat_id','vat_stawka','status','uwagi'];
@@ -324,6 +324,7 @@ function ensureParagonyHeaders_(){
   sh.getRange('M:N').setNumberFormat('0.00');             // kwoty
 }
 
+/********** PARAGONY: import JSON **********/
 function importReceiptsFromDrive_(){
   ensureParagonyHeaders_();
   const sh = ss().getSheetByName(RECEIPTS_SHEET);
@@ -331,12 +332,11 @@ function importReceiptsFromDrive_(){
   const files = (Drive.Files.list({ q, pageSize: 1000 }).files || [])
                  .filter(f => !(f.name||'').endsWith(PROCESSED_SUFFIX));
 
-  const idx = receiptsIndex_();        // ← mamy listę już zaimportowanych plików/paragonów
+  const idx = receiptsIndex_();        // lista już zaimportowanych plików/paragonów
   let batch = [];                      // zbierzemy wiersze i wstawimy hurtem
 
   files.forEach(f=>{
     if (idx.byFile.has(f.name)) return;  // plik już był → nie dubluj
-
     try{
       const txt = DriveApp.getFileById(f.id).getBlob().getDataAsString('UTF-8');
       const obj = JSON.parse(txt);
@@ -353,7 +353,7 @@ function importReceiptsFromDrive_(){
   }
   SpreadsheetApp.getActive().toast(`Import: ${batch.length} wierszy z ${files.length} plików`);
 
-  // twardsze .done: użyj zaawansowanego Drive v3
+  // .done lub kosz po sukcesie
   files.forEach(f=>{
     try{
       if (TRASH_AFTER_IMPORT) {
@@ -363,8 +363,6 @@ function importReceiptsFromDrive_(){
       }
     }catch(e){ Logger.log('rename/trash error: '+(f.name||f.id)+' '+e); }
   });
-}
-
 }
 
 function parseReceiptJson_(obj, filename){
@@ -421,7 +419,3 @@ function diagListJsonInFolder_(){
   }
   SpreadsheetApp.getActive().toast(`DiagJSON: ${files.length} plików`);
 }
-
-
-
-
