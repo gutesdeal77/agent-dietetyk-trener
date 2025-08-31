@@ -30,6 +30,8 @@ function onOpen(){
       .addItem('Diag: lista JSON w folderze', 'diagListJsonInFolder_')
       .addItem('Diag: lista OCR (PDF/JPG)', 'diagListOcrInFolder_')
       .addItem('Przelicz „Spiżarkę” (sumy)', 'recalcPantryTotals_')
+      .addItem('Aktualizuj nazwy/status z DB', 'refreshPantryNames_')
+
 
 
       .addToUi();
@@ -451,6 +453,32 @@ sh.getRange(2, K, last-1, 1)
   .setFormulaR1C1(`=IF(RC${e}="";"";RC${Q}*INDEX(C${k100};MATCH(RC${e};C${e};0)))`);
 
   SpreadsheetApp.getActive().toast('Przeliczono sumy w „Spiżarce”');
+
 }
+function refreshPantryNames_(){
+  const s=ss(), sp=s.getSheetByName(PANTRY_SHEET), db=s.getSheetByName(DB_SHEET);
+  const Hsp=headersMap_(sp), Hdb=headersMap_(db);
+  const last=sp.getLastRow(); if(last<2) return;
+
+  const rows=sp.getRange(2,1,last-1,Math.max(sp.getLastColumn(),8)).getValues();
+  const DB=db.getDataRange().getValues();
+  const map=new Map();
+  for(let i=1;i<DB.length;i++){
+    const r=DB[i], e=NORM(r[(Hdb.ean||1)-1]); if(!e) continue;
+    map.set(e,{
+      name:   r[(Hdb.name||2)-1] || '',
+      status: Hdb['Status'] ? (r[Hdb['Status']-1] || '') : ''
+    });
+  }
+  for(let i=0;i<rows.length;i++){
+    const e=NORM(rows[i][(Hsp.ean||2)-1]); if(!e) continue;
+    const m=map.get(e); if(!m) continue;
+    if(m.name)   rows[i][(Hsp.name||3)-1]   = m.name;
+    if(m.status) rows[i][(Hsp.status||8)-1] = m.status;
+  }
+  sp.getRange(2,1,rows.length,rows[0].length).setValues(rows);
+  SpreadsheetApp.getActive().toast('Zaktualizowano nazwę/status z DB (bez dodawania wierszy).');
+}
+
 
 
